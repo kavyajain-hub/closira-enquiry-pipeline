@@ -13,6 +13,7 @@ class Enquiry(Base):
     status = Column(String, index=True, default="new")  # new, qualified, escalated
     matched_sop = Column(String, nullable=True)
     suggested_response = Column(Text, nullable=True)
+    ai_summary = Column(Text, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

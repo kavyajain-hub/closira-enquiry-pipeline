@@ -34,6 +34,7 @@ class EnquiryResponse(EnquiryBase):
     status: str
     matched_sop: Optional[str] = None
     suggested_response: Optional[str] = None
+    ai_summary: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

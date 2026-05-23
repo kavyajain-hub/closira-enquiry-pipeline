@@ -3,12 +3,14 @@ from app.core.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.crud.enquiry import crud_enquiry
 from app.core.logging import logger
+from app.core.ai import analyze_enquiry_with_ai
 
 @celery_app.task(name="process_enquiry_sop")
 def process_enquiry_sop(enquiry_id: int):
     """
-    Asynchronously processes a customer enquiry. Matches keywords to standard SOPs,
-    updates database records, and handles auto-escalations with structured JSON logs.
+    Asynchronously processes a customer enquiry.
+    Attempts to use the Google Gemini API to analyze intent, match SOPs, and draft replies.
+    If Gemini is not configured or fails, gracefully falls back to local regex keyword matching.
     """
     logger.info(
         "Processing enquiry SOP asynchronously.",
@@ -25,6 +27,51 @@ def process_enquiry_sop(enquiry_id: int):
             )
             return {"status": "error", "detail": "Enquiry not found"}
 
+        # Attempt to analyze the enquiry using real Gemini AI API
+        ai_result = analyze_enquiry_with_ai(enquiry.customer_name, enquiry.message)
+
+        if ai_result:
+            # AI pipeline succeeded! Persist LLM insights
+            matched_sop = ai_result.get("matched_sop")
+            suggested_response = ai_result.get("suggested_response")
+            status = ai_result.get("status")
+            ai_summary = ai_result.get("ai_summary")
+
+            logger.info(
+                "Successfully processed enquiry using Google Gemini LLM API.",
+                extra={
+                    "extra_data": {
+                        "enquiry_id": enquiry_id,
+                        "matched_sop": matched_sop,
+                        "status": status,
+                        "ai_summary": ai_summary
+                    }
+                }
+            )
+
+            crud_enquiry.update_sop_match(
+                db,
+                db_obj=enquiry,
+                matched_sop=matched_sop,
+                suggested_response=suggested_response,
+                status=status,
+                ai_summary=ai_summary
+            )
+
+            return {
+                "status": "processed",
+                "mode": "ai_llm",
+                "enquiry_id": enquiry_id,
+                "matched_sop": matched_sop,
+                "assigned_status": status
+            }
+
+        # Fallback Mode: Gemini API was skipped or failed. Use local regex keyword matching.
+        logger.info(
+            "Gemini API returned None or is disabled. Triggering local regex keyword fallback engine.",
+            extra={"extra_data": {"enquiry_id": enquiry_id}}
+        )
+
         message_lower = enquiry.message.lower()
 
         # Hardcoded SOP keyword mappings
@@ -40,6 +87,7 @@ def process_enquiry_sop(enquiry_id: int):
         matched_sop = None
         suggested_response = None
         status = "qualified"
+        fallback_summary = "Enquiry received. Processed locally via keyword-matching fallback engine."
 
         # SOP Keyword Logic
         if any(kw in message_lower for kw in complaint_keywords):
@@ -49,6 +97,7 @@ def process_enquiry_sop(enquiry_id: int):
                 "I have escalated your complaint directly to our manager who will call you shortly."
             )
             status = "escalated"
+            fallback_summary = "High-priority customer complaint detected via keyword search."
             
             logger.info(
                 "Enquiry auto-escalated due to complaint keywords.",
@@ -68,6 +117,7 @@ def process_enquiry_sop(enquiry_id: int):
                 f"Hi {enquiry.customer_name}, thanks for reaching out! We would be delighted to schedule a session. "
                 "Please let us know your preferred date and time, and we'll book your slot immediately."
             )
+            fallback_summary = "Booking and scheduling enquiry detected via keyword search."
             
             logger.info(
                 "Enquiry matched to Booking SOP.",
@@ -86,6 +136,7 @@ def process_enquiry_sop(enquiry_id: int):
                 f"Hi {enquiry.customer_name}, thank you for your enquiry. Our custom platform packages start at "
                 "just $99/month. We have sent our detailed price catalog to your email. Let us know if you'd like a call!"
             )
+            fallback_summary = "Pricing structure and catalog query detected via keyword search."
             
             logger.info(
                 "Enquiry matched to Pricing SOP.",
@@ -104,6 +155,7 @@ def process_enquiry_sop(enquiry_id: int):
                 f"Hi {enquiry.customer_name}, thanks for your message! Our offices are currently closed, but "
                 "we have queued your enquiry and our support team will reply first thing in the morning."
             )
+            fallback_summary = "After-hours enquiry detected via keyword search."
             
             logger.info(
                 "Enquiry matched to After-Hours SOP.",
@@ -119,6 +171,7 @@ def process_enquiry_sop(enquiry_id: int):
         else:
             # No SOP Matched -> Flag as Escalated directly
             status = "escalated"
+            fallback_summary = "Inbound message with no matching keyword SOPs. Set to manual escalation."
             
             logger.info(
                 "No SOP matched. Enquiry flagged for manual escalation.",
@@ -131,17 +184,19 @@ def process_enquiry_sop(enquiry_id: int):
                 }
             )
 
-        # Update database with matches
+        # Update database with fallback matches
         crud_enquiry.update_sop_match(
             db,
             db_obj=enquiry,
             matched_sop=matched_sop,
             suggested_response=suggested_response,
-            status=status
+            status=status,
+            ai_summary=fallback_summary
         )
 
         return {
             "status": "processed",
+            "mode": "regex_fallback",
             "enquiry_id": enquiry_id,
             "matched_sop": matched_sop,
             "assigned_status": status

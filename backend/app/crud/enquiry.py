@@ -36,22 +36,27 @@ class CRUDEnquiry(CRUDBase[Enquiry, EnquiryCreate, Any]):
         return db.query(Followup).filter(Followup.enquiry_id == enquiry_id).order_by(Followup.created_at.desc()).all()
 
     def update_sop_match(
-        self, db: Session, *, db_obj: Enquiry, matched_sop: Optional[str], suggested_response: Optional[str], status: str
+        self, db: Session, *, db_obj: Enquiry, matched_sop: Optional[str], suggested_response: Optional[str], status: str, ai_summary: Optional[str] = None
     ) -> Enquiry:
         db_obj.matched_sop = matched_sop
         db_obj.suggested_response = suggested_response
         db_obj.status = status
+        db_obj.ai_summary = ai_summary
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
 
         # Log to timeline
         event_type = "sop_matched" if status == "qualified" else "escalation_triggered"
-        notes = (
-            f"SOP Matched: {matched_sop}. Suggested response generated."
-            if status == "qualified"
-            else f"No SOP matched automatically. Escalation triggered."
-        )
+        
+        notes = ""
+        if status == "qualified":
+            notes = f"SOP Matched: {matched_sop}. Suggested response generated."
+        else:
+            notes = "No SOP matched automatically. Escalation triggered."
+            
+        if ai_summary:
+            notes += f" AI Summary: {ai_summary}"
 
         timeline_obj = StatusTimeline(
             enquiry_id=db_obj.id,

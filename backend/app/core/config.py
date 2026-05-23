@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "supersecretjwtkey987654321"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # AI Integration
+    GEMINI_API_KEY: str | None = None
+
     model_config = ConfigDict(case_sensitive=True, env_file=".env")
 
 settings = Settings()
