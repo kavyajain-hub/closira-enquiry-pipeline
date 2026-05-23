@@ -1,0 +1,29 @@
+# === Backend Ignore Rules ===
+backend/venv/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/api/__pycache__/
+backend/app/api/v1/__pycache__/
+backend/app/api/v1/endpoints/__pycache__/
+backend/app/core/__pycache__/
+backend/app/crud/__pycache__/
+backend/app/models/__pycache__/
+backend/app/schemas/__pycache__/
+backend/app/workers/__pycache__/
+*.pyc
+backend/.env
+backend/test_payload.json
+
+# === Frontend Ignore Rules ===
+frontend/node_modules/
+frontend/.expo/
+frontend/web-build/
+frontend/npm-debug.log*
+frontend/yarn-error.log*
+frontend/.env
+
+# === Root Ignore Rules ===
+.env
+.DS_Store
+Thumbs.db
+*.log
